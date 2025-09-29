@@ -313,9 +313,6 @@ def pagina_home():
         marker=dict(size=8, color='#4361f2', line=dict(width=1, color='#ffffff')),
         hovertemplate='<b>Data:</b> %{x|%d/%m/%Y}<br><b>Patrimônio:</b> R$ %{y:,.2f}<extra></extra>',
         text=df_evolucao['Total'].apply(formatar_numero_br),
-        mode='lines+markers+text',
-        textposition='top center',
-        textfont=dict(size=16, color='#001f3f')
     )
     meses_map_pt = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out',
                     11: 'Nov', 12: 'Dez'}
@@ -725,9 +722,6 @@ def criar_pagina_plano(nome_plano_key):
         marker=dict(size=8, color='#4361f2', line=dict(width=1, color='#ffffff')),
         hovertemplate='<b>Data:</b> %{x|%d/%m/%Y}<br><b>Patrimônio:</b> R$ %{y:,.2f}<extra></extra>',
         text=df_evolucao['Total'].apply(formatar_numero_br),
-        mode='lines+markers+text',
-        textposition='top center',
-        textfont=dict(size=16, color='#001f3f')
     )
     meses_map_pt = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out',
                     11: 'Nov', 12: 'Dez'}
@@ -933,15 +927,24 @@ def criar_pagina_plano(nome_plano_key):
     else:
         st.warning("Não há dados de investimentos para a data selecionada para exibir os rankings.")
 
+    # --- ANÁLISE DE RENTABILIDADE ACUMULADA (COM NOME E SEGMENTO) ---
     st.markdown("---")
     st.subheader("Análise de Rentabilidade Acumulada (Fundos vs. Indicadores)")
+
+    # --- PREPARAÇÃO E NORMALIZAÇÃO DOS DADOS ---
     df_ativos_plano = df_ativos[df_ativos['nome_plano'] == config["filtro_ativos"]].copy()
     df_ativos_plano['rentabilidade'] = pd.to_numeric(df_ativos_plano['rentabilidade'], errors='coerce').dropna()
     df_ativos_plano['data_posicao'] = df_ativos_plano['data_posicao'].dt.to_period('M').dt.start_time
     df_indices_norm = df_indices.copy()
     df_indices_norm['data_posicao'] = df_indices_norm['data_posicao'].dt.to_period('M').dt.start_time
 
-    lista_fundos = sorted(df_ativos_plano['nome_fundo'].unique()) if not df_ativos_plano.empty else []
+    # >>> ALTERAÇÃO APLICADA AQUI <<<
+    # 1. Cria a nova coluna combinando nome e segmento
+    df_ativos_plano['nome_fundo_segmento'] = df_ativos_plano['nome_fundo'] + " - " + df_ativos_plano['segmento']
+
+    # --- WIDGETS DE SELEÇÃO ---
+    # 2. Usa a nova coluna para criar a lista de opções
+    lista_fundos = sorted(df_ativos_plano['nome_fundo_segmento'].unique()) if not df_ativos_plano.empty else []
     lista_indicadores = sorted(
         [col for col in df_indices_norm.columns if col not in ['data_posicao']]) if not df_indices_norm.empty else []
 
@@ -954,6 +957,7 @@ def criar_pagina_plano(nome_plano_key):
         default=['CDI'] if 'CDI' in lista_indicadores else [], key=f"{nome_plano_key}_rent_indicadores"
     )
 
+    # --- SELETORES DE DATA ---
     all_dates_series = pd.concat([df_ativos_plano['data_posicao'], df_indices_norm['data_posicao']]).dropna()
     datas_disponiveis = all_dates_series.drop_duplicates().sort_values(ascending=False)
     opcoes_data = {d.strftime('%B de %Y'): d for d in datas_disponiveis}
@@ -968,27 +972,32 @@ def criar_pagina_plano(nome_plano_key):
     data_inicial_selecionada = opcoes_data[data_inicial_str]
     data_final_selecionada = opcoes_data[data_final_str]
 
+    # --- LÓGICA DE CÁLCULO E PLOTAGEM ---
     if not fundos_selecionados and not indicadores_selecionados:
         st.info("Selecione pelo menos um fundo ou indicador para visualizar o gráfico.")
     elif data_inicial_selecionada > data_final_selecionada:
         st.warning("A Data Inicial deve ser anterior ou igual à Data Final.")
     else:
         dfs_combinados = []
+
+        # 3. Processa os FUNDOS usando a nova coluna para filtrar e agrupar
         if fundos_selecionados:
-            df_fundos_full = df_ativos_plano[df_ativos_plano['nome_fundo'].isin(fundos_selecionados)].copy()
+            df_fundos_full = df_ativos_plano[df_ativos_plano['nome_fundo_segmento'].isin(fundos_selecionados)].copy()
             df_fundos_full.sort_values(by='data_posicao', inplace=True)
-            df_fundos_full['ret_acum_hist'] = df_fundos_full.groupby('nome_fundo')['rentabilidade'].transform(
+            df_fundos_full['ret_acum_hist'] = df_fundos_full.groupby('nome_fundo_segmento')['rentabilidade'].transform(
                 lambda x: (1 + x / 100).cumprod())
             df_fundos_periodo = df_fundos_full[(df_fundos_full['data_posicao'] >= data_inicial_selecionada) & (
-                        df_fundos_full['data_posicao'] <= data_final_selecionada)].copy()
-            base_values = df_fundos_periodo.groupby('nome_fundo')['ret_acum_hist'].first()
-            df_fundos_periodo['base'] = df_fundos_periodo['nome_fundo'].map(base_values)
+                    df_fundos_full['data_posicao'] <= data_final_selecionada)].copy()
+            base_values = df_fundos_periodo.groupby('nome_fundo_segmento')['ret_acum_hist'].first()
+            df_fundos_periodo['base'] = df_fundos_periodo['nome_fundo_segmento'].map(base_values)
             df_fundos_periodo['retorno_acumulado'] = (df_fundos_periodo['ret_acum_hist'] / df_fundos_periodo[
                 'base']) - 1
             df_fundos_periodo['Tipo'] = 'Fundo'
-            df_fundos_periodo.rename(columns={'nome_fundo': 'Nome'}, inplace=True)
+            df_fundos_periodo.rename(columns={'nome_fundo_segmento': 'Nome'},
+                                     inplace=True)  # Renomeia a coluna combinada
             dfs_combinados.append(df_fundos_periodo[['data_posicao', 'Nome', 'retorno_acumulado', 'Tipo']])
 
+        # Processa os INDICADORES (sem alteração)
         if indicadores_selecionados:
             df_indices_long = df_indices_norm.melt(id_vars=['data_posicao'], value_vars=indicadores_selecionados,
                                                    var_name='Nome', value_name='rentabilidade')
@@ -997,7 +1006,7 @@ def criar_pagina_plano(nome_plano_key):
             df_indices_long['ret_acum_hist'] = df_indices_long.groupby('Nome')['rentabilidade'].transform(
                 lambda x: (1 + x).cumprod())
             df_indices_periodo = df_indices_long[(df_indices_long['data_posicao'] >= data_inicial_selecionada) & (
-                        df_indices_long['data_posicao'] <= data_final_selecionada)].copy()
+                    df_indices_long['data_posicao'] <= data_final_selecionada)].copy()
             base_values_ind = df_indices_periodo.groupby('Nome')['ret_acum_hist'].first()
             df_indices_periodo['base'] = df_indices_periodo['Nome'].map(base_values_ind)
             df_indices_periodo['retorno_acumulado'] = (df_indices_periodo['ret_acum_hist'] / df_indices_periodo[
@@ -1005,6 +1014,7 @@ def criar_pagina_plano(nome_plano_key):
             df_indices_periodo['Tipo'] = 'Indicador'
             dfs_combinados.append(df_indices_periodo[['data_posicao', 'Nome', 'retorno_acumulado', 'Tipo']])
 
+        # Combina tudo e plota o gráfico
         if dfs_combinados:
             df_final_plot = pd.concat(dfs_combinados, ignore_index=True).sort_values(by='data_posicao')
             fig_rentabilidade = px.line(
