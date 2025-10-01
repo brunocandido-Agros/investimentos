@@ -216,12 +216,12 @@ NOME_BANCO_DADOS = 'meu_dashboard.db'
 
 
 # --- FUNÇÃO PARA CARREGAR E CACHEAR OS DADOS ---
-@st.cache_data
+@st.cache_data(ttl=600)
 def carregar_dados():
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
 
-        # Query para investimentos
+        # Query para investimentos (SUA LÓGICA ORIGINAL MANTIDA)
         query_investimentos = "SELECT inv.*, cad.gestor FROM investimentos inv LEFT JOIN cadastro_fundos cad ON inv.codigo_isin_fundo = cad.codigo_isin"
         df_investimentos = pd.read_sql(query_investimentos, conn)
         if not df_investimentos.empty:
@@ -229,42 +229,52 @@ def carregar_dados():
             df_investimentos['valor_total'] = pd.to_numeric(df_investimentos['valor_total'], errors='coerce')
             df_investimentos['gestor'] = df_investimentos['gestor'].fillna('Não Cadastrado')
 
-        # Query para imóveis
+        # Query para imóveis (SUA LÓGICA ORIGINAL MANTIDA)
         query_imoveis = "SELECT * FROM imoveis_emprestimos"
         df_imoveis = pd.read_sql_query(query_imoveis, conn)
         if not df_imoveis.empty:
             df_imoveis['data_posicao'] = pd.to_datetime(df_imoveis['data_posicao'])
             df_imoveis['valor_total'] = pd.to_numeric(df_imoveis['valor_total'], errors='coerce')
 
-        # Query para rentabilidade dos ativos
+        # Query para rentabilidade dos ativos (SUA LÓGICA ORIGINAL MANTIDA)
         query_ativos = "SELECT * FROM Ativos"
         df_ativos = pd.read_sql_query(query_ativos, conn)
         if not df_ativos.empty:
             df_ativos['data_posicao'] = pd.to_datetime(df_ativos['data_posicao'])
 
-        # --- ADIÇÃO DA NOVA TABELA ---
+        # Query para índices (SUA LÓGICA ORIGINAL MANTIDA)
         query_indices = "SELECT * FROM indices_taxas"
         df_indices = pd.read_sql_query(query_indices, conn)
         if not df_indices.empty:
             df_indices['data_posicao'] = pd.to_datetime(df_indices['data_posicao'])
+
+        # --- NOVAS TABELAS ADICIONADAS AQUI ---
+        query_planos = "SELECT * FROM Planos"
+        df_planos = pd.read_sql_query(query_planos, conn)
+        if not df_planos.empty:
+            df_planos['data_posicao'] = pd.to_datetime(df_planos['data_posicao'])
+
+        query_segmentos = "SELECT * FROM Segmentos"
+        df_segmentos = pd.read_sql_query(query_segmentos, conn)
+        if not df_segmentos.empty:
+            df_segmentos['data_posicao'] = pd.to_datetime(df_segmentos['data_posicao'])
         # --- FIM DA ADIÇÃO ---
 
         conn.close()
 
-        # Retorna os quatro DataFrames
-        return df_investimentos, df_imoveis, df_ativos, df_indices
+        # A função agora retorna os seis DataFrames
+        return df_investimentos, df_imoveis, df_ativos, df_indices, df_planos, df_segmentos
 
     except Exception as e:
-        st.error(f"Erro ao conectar ou ler o banco de dados: {e}")
-        # Retorna quatro DataFrames vazios em caso de erro
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        st.error(f"Erro ao carregar os dados do banco de dados: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 
 # --- FUNÇÕES DE PÁGINA ---
 def pagina_home():
     st.title("Dashboard Consolidado (Agros)")
 
-    df_investimentos, df_imoveis, df_ativos, df_indices = carregar_dados()
+    df_investimentos, df_imoveis, df_ativos, df_indices, df_planos, df_segmentos = carregar_dados()
 
     if df_investimentos.empty and df_imoveis.empty:
         st.warning("Nenhum dado encontrado.")
@@ -489,7 +499,6 @@ def pagina_home():
     st.plotly_chart(fig_evol_planos, use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- 2. ANÁLISE POR SEGMENTOS (CÓDIGO SEM ALTERAÇÃO) ---
     col_seg1, col_seg2 = st.columns([0.8, 1.2])
     with col_seg1:
         st.markdown("##### Distribuição por Segmentos")
@@ -584,6 +593,145 @@ def pagina_home():
     st.plotly_chart(fig_evol_seg, use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # --- ANÁLISE DE RENTABILIDADE ACUMULADA (PLANOS E SEGMENTOS) ---
+    st.markdown("---")
+    st.subheader("Análise de Rentabilidade Acumulada (Planos e Segmentos)")
+
+    # 1. VERIFICAÇÃO E PREPARAÇÃO DOS DADOS
+    # --- AJUSTE REALIZADO AQUI COM OS NOMES CORRETOS ---
+    COLUNA_RENTAB_PLANOS = 'rentabilidade_plano'
+    COLUNA_RENTAB_SEGMENTOS = 'Rentabilidade'
+
+    if COLUNA_RENTAB_PLANOS not in df_planos.columns or COLUNA_RENTAB_SEGMENTOS not in df_segmentos.columns:
+        st.error(f"Erro de configuração: A coluna de rentabilidade não foi encontrada em uma das tabelas.")
+        st.write(
+            "Verifique os nomes das colunas e ajuste as variáveis `COLUNA_RENTAB_PLANOS` e `COLUNA_RENTAB_SEGMENTOS` no código.")
+        st.write("Colunas encontradas em Planos:", df_planos.columns.to_list())
+        st.write("Colunas encontradas em Segmentos:", df_segmentos.columns.to_list())
+
+    elif not df_planos.empty and not df_segmentos.empty:
+        # Renomeia as colunas específicas para um nome padrão 'rentabilidade' para o resto do código
+        df_planos_prep = df_planos.rename(columns={COLUNA_RENTAB_PLANOS: 'rentabilidade'})
+        df_planos_prep['nome_unico'] = df_planos_prep['nome_plano']
+        df_planos_prep['Tipo'] = 'Plano'
+
+        df_segmentos_prep = df_segmentos.rename(columns={COLUNA_RENTAB_SEGMENTOS: 'rentabilidade'})
+        df_segmentos_prep['nome_unico'] = df_segmentos_prep['nome_plano'] + " - " + df_segmentos_prep['segmento']
+        df_segmentos_prep['Tipo'] = 'Segmento'
+
+        df_performance = pd.concat([
+            df_planos_prep[['data_posicao', 'nome_unico', 'rentabilidade', 'Tipo']],
+            df_segmentos_prep[['data_posicao', 'nome_unico', 'rentabilidade', 'Tipo']]
+        ])
+
+        df_performance['rentabilidade'] = pd.to_numeric(df_performance['rentabilidade'], errors='coerce')
+        df_performance.dropna(subset=['rentabilidade'], inplace=True)
+        df_performance['rentabilidade'] = df_performance['rentabilidade'] / 100
+        df_performance['data_posicao'] = df_performance['data_posicao'].dt.to_period('M').dt.start_time
+
+        # O resto do código continua como antes, pois ele já espera uma coluna chamada 'rentabilidade'
+        lista_performance = sorted(df_performance['nome_unico'].unique())
+        lista_indicadores = sorted([col for col in df_indices.columns if col not in ['data_posicao']])
+
+        planos_segmentos_selecionados = st.multiselect(
+            "Selecione um ou mais Planos/Segmentos para comparar a performance:",
+            options=lista_performance,
+            default=lista_performance[:2] if len(lista_performance) > 1 else lista_performance,
+            key="home_planos_segmentos"
+        )
+        indicadores_selecionados = st.multiselect(
+            "Selecione um ou mais indicadores para comparar:",
+            options=lista_indicadores,
+            default=['CDI'] if 'CDI' in lista_indicadores else [],
+            key="home_indicadores"
+        )
+
+        df_indices_norm = df_indices.copy()
+        df_indices_norm['data_posicao'] = df_indices_norm['data_posicao'].dt.to_period('M').dt.start_time
+
+        all_dates_series = pd.concat([df_performance['data_posicao'], df_indices_norm['data_posicao']]).dropna()
+        datas_disponiveis = all_dates_series.drop_duplicates().sort_values(ascending=False)
+        opcoes_data = {d.strftime('%B de %Y'): d for d in datas_disponiveis}
+
+        col_data1, col_data2 = st.columns(2)
+        with col_data1:
+            data_inicial_str = st.selectbox("Data Inicial da Análise:", options=list(opcoes_data.keys()),
+                                            index=len(opcoes_data) - 1, key="home_rent_data_inicial")
+        with col_data2:
+            data_final_str = st.selectbox("Data Final da Análise:", options=list(opcoes_data.keys()), index=0,
+                                          key="home_rent_data_final")
+
+        data_inicial_selecionada = opcoes_data[data_inicial_str]
+        data_final_selecionada = opcoes_data[data_final_str]
+
+        if not planos_segmentos_selecionados and not indicadores_selecionados:
+            st.info("Selecione pelo menos um item para visualizar o gráfico.")
+        elif data_inicial_selecionada > data_final_selecionada:
+            st.warning("A Data Inicial deve ser anterior ou igual à Data Final.")
+        else:
+            dfs_combinados = []
+
+            if planos_segmentos_selecionados:
+                df_perf_full = df_performance[df_performance['nome_unico'].isin(planos_segmentos_selecionados)].copy()
+                df_perf_full.sort_values(by='data_posicao', inplace=True)
+                df_perf_full['ret_acum_hist'] = df_perf_full.groupby('nome_unico')['rentabilidade'].transform(
+                    lambda x: (1 + x).cumprod())
+                df_perf_periodo = df_perf_full[(df_perf_full['data_posicao'] >= data_inicial_selecionada) & (
+                            df_perf_full['data_posicao'] <= data_final_selecionada)].copy()
+
+                if not df_perf_periodo.empty:
+                    base_values = df_perf_periodo.groupby('nome_unico')['ret_acum_hist'].first()
+                    df_perf_periodo['base'] = df_perf_periodo['nome_unico'].map(base_values)
+                    df_perf_periodo['retorno_acumulado'] = (df_perf_periodo['ret_acum_hist'] / df_perf_periodo[
+                        'base']) - 1
+                    df_perf_periodo.rename(columns={'nome_unico': 'Nome'}, inplace=True)
+                    dfs_combinados.append(df_perf_periodo[['data_posicao', 'Nome', 'retorno_acumulado', 'Tipo']])
+
+            if indicadores_selecionados:
+                df_indices_long = df_indices_norm.melt(id_vars=['data_posicao'], value_vars=indicadores_selecionados,
+                                                       var_name='Nome', value_name='rentabilidade')
+                df_indices_long['rentabilidade'] = pd.to_numeric(df_indices_long['rentabilidade'], errors='coerce')
+                df_indices_long.sort_values(by='data_posicao', inplace=True)
+                df_indices_long['ret_acum_hist'] = df_indices_long.groupby('Nome')['rentabilidade'].transform(
+                    lambda x: (1 + x).cumprod())
+
+                df_indices_periodo = df_indices_long[(df_indices_long['data_posicao'] >= data_inicial_selecionada) & (
+                            df_indices_long['data_posicao'] <= data_final_selecionada)].copy()
+
+                if not df_indices_periodo.empty:
+                    base_values_ind = df_indices_periodo.groupby('Nome')['ret_acum_hist'].first()
+                    df_indices_periodo['base'] = df_indices_periodo['Nome'].map(base_values_ind)
+                    df_indices_periodo['retorno_acumulado'] = (df_indices_periodo['ret_acum_hist'] / df_indices_periodo[
+                        'base']) - 1
+                    df_indices_periodo['Tipo'] = 'Indicador'
+                    dfs_combinados.append(df_indices_periodo[['data_posicao', 'Nome', 'retorno_acumulado', 'Tipo']])
+
+            if dfs_combinados:
+                df_final_plot = pd.concat(dfs_combinados, ignore_index=True).sort_values(by='data_posicao')
+                fig_rentabilidade = px.line(
+                    df_final_plot, x='data_posicao', y='retorno_acumulado', color='Nome',
+                    line_dash='Tipo', line_shape='spline',
+                    labels={"data_posicao": "<b>Data</b>", "retorno_acumulado": "<b>Rentabilidade Acumulada (%)</b>",
+                            "Nome": "<b>Ativo</b>"}
+                )
+                fig_rentabilidade.update_traces(mode='lines+markers')
+                fig_rentabilidade.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(gridcolor='#e0e0e0', tickformat='%b/%Y', dtick="M1"),
+                    yaxis=dict(gridcolor='#e0e0e0', tickformat=".2%"),
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.4, title_text=""),
+                    margin=dict(l=40, r=40, t=40, b=40),
+                    hovermode="x unified",
+                    hoverlabel=dict(bgcolor="white", font_size=16),
+                    legend_traceorder="grouped"
+                )
+                st.plotly_chart(fig_rentabilidade, use_container_width=True)
+            else:
+                st.warning("Nenhum dado encontrado para os ativos selecionados no período especificado.")
+    else:
+        st.warning(
+            "Não foi possível carregar os dados das tabelas 'Planos' ou 'Segmentos' para exibir o gráfico de rentabilidade.")
+
     # --- INÍCIO DO BLOCO DE RANKINGS ---
     st.markdown("---")
     st.subheader("Rankings de Performance")
@@ -593,7 +741,6 @@ def pagina_home():
         total_fundos = df_inv_filtrado['nome_fundo'].nunique()
         total_gestores = df_inv_filtrado['gestor'].nunique()
 
-        # --- Ranking de Fundos ---
         num_fundos = st.slider(
             "Selecione o número de fundos para exibir:",
             min_value=5,
@@ -669,7 +816,7 @@ def criar_pagina_plano(nome_plano_key):
     config = CONFIGURACOES_PLANOS[nome_plano_key]
     st.title(config["titulo"])
 
-    df_investimentos, df_imoveis, df_ativos, df_indices = carregar_dados()
+    df_investimentos, df_imoveis, df_ativos, df_indices, df_planos, df_segmentos = carregar_dados()
 
     # --- FILTRAGEM DOS DADOS USANDO A CONFIGURAÇÃO DO PLANO ---
     df_investimentos_plano = df_investimentos[df_investimentos['nome_plano'] == config["filtro_investimentos"]].copy()
@@ -735,6 +882,7 @@ def criar_pagina_plano(nome_plano_key):
         hoverlabel=dict(bgcolor="white", font_size=17, font_family="sans-serif")
     )
     st.plotly_chart(fig_evol, use_container_width=True)
+
     st.markdown("---")
 
     st.subheader(f"Análise de Variação Patrimonial ({nome_plano_key})")
@@ -774,6 +922,7 @@ def criar_pagina_plano(nome_plano_key):
             st.markdown(
                 f'<div class="var-card {cor_variacao}"><div class="var-title">VARIAÇÃO (%)</div><div class="var-value">{sinal_pct}{variacao_pct:.2f}%</div></div>',
                 unsafe_allow_html=True)
+
     st.markdown("---")
 
     st.subheader(f"Análise da Carteira de Investimentos ({nome_plano_key})")
@@ -789,9 +938,6 @@ def criar_pagina_plano(nome_plano_key):
     patrimonio_na_data = df_inv_filtrado_data['valor_total'].sum() + df_imo_filtrado_data['valor_total'].sum()
     cores_azuis = ['#0d47a1', '#1976d2', '#42a5f5', '#90caf9', '#bbdefb', '#e3f2fd']
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # ... (O resto do código da pagina_investprev continua aqui, sem alterações, apenas usando as chaves dinâmicas nos widgets como key=f"{nome_plano_key}_widget_name")
-    # Eu completei o código para você abaixo, já com todas as chaves dinâmicas.
 
     col_seg1, col_seg2 = st.columns([0.8, 1.2])
     with col_seg1:
