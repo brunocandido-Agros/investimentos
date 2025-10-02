@@ -734,7 +734,7 @@ def pagina_home():
 
     # --- INÍCIO DO BLOCO DE RANKINGS ---
     st.markdown("---")
-    st.subheader("Rankings de Performance")
+    st.subheader("Rankings de Fundos e Gestores")
 
     # Garante que há dados de investimento para a data selecionada
     if not df_inv_filtrado.empty:
@@ -1030,7 +1030,7 @@ def criar_pagina_plano(nome_plano_key):
     st.plotly_chart(fig_evol_seg, use_container_width=True)
 
     st.markdown("---")
-    st.subheader(f"Rankings de Performance ({nome_plano_key})")
+    st.subheader(f"Rankings de Fundos e Gestores ({nome_plano_key})")
 
     if not df_inv_filtrado_data.empty:
         total_fundos = df_inv_filtrado_data['nome_fundo'].nunique()
