@@ -116,8 +116,8 @@ def carregar_css():
         /* --- BOTÕES DA SIDEBAR (CÓDIGO SEM ALTERAÇÃO) --- */
         [data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {{ display: none; }}
         [data-testid="stSidebar"] div[role="radiogroup"] > label {{
-            display: block; margin: 5px 15px 6px 15px; border-radius: 10px;
-            width: calc(100% - 30px) !important;
+            display: block; margin: 5px 1px 6px 30px; border-radius: 10px;
+            width: calc(100% - 0px) !important;
         }}
         [data-testid="stSidebar"] div[role="radiogroup"] input {{
             position: absolute !important; left: -9999px !important;
@@ -1228,3 +1228,4 @@ with st.sidebar:
              key="pagina_selecionada")
 
 paginas[st.session_state.pagina_selecionada]()
+
